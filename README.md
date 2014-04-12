@@ -1,6 +1,6 @@
 ## Realtek 802.11ac (rtl8812au)
 
-This is a fork of the Realtek 802.11ac (rtl8812au) v4.2.2 (7502.20130507)
+This is a fork of the Realtek 802.11ac (rtl8812au) v4.2.5 (10640.20140303)
 driver altered to build on Linux kernel version >= 3.10.
 
 ### Purpose
