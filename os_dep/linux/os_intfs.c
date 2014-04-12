@@ -351,6 +351,472 @@ int netdev_open (struct net_device *pnetdev);
 static int netdev_close (struct net_device *pnetdev);
 
 //#ifdef RTK_DMP_PLATFORM
+#ifdef CONFIG_PROC_DEBUG
+#define RTL8192C_PROC_NAME "rtl819xC"
+#define RTL8192D_PROC_NAME "rtl819xD"
+static char rtw_proc_name[IFNAMSIZ];
+static struct proc_dir_entry *rtw_proc = NULL;
+static int	rtw_proc_cnt = 0;
+
+#define RTW_PROC_NAME DRV_NAME
+
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
+typedef ssize_t (*read_proc_t) (struct file *, char __user *, ssize_t, loff_t *);
+static inline struct proc_dir_entry *create_proc_read_entry(const char *name,
+        mode_t mode, struct proc_dir_entry *base,
+        read_proc_t *read_proc, void * data)
+{
+	struct file_operations fops = {
+		owner: THIS_MODULE,
+		read: read_proc
+	};
+	struct proc_dir_entry *res = proc_create_data(name, mode, base, &fops, data);
+	return res;
+}
+typedef ssize_t (*write_proc_t) (struct file *, const char __user *, ssize_t, loff_t *);
+static inline struct proc_dir_entry *create_proc_read_write_entry(const char *name,
+        mode_t mode, struct proc_dir_entry *base,
+        read_proc_t *read_proc, void * data, write_proc_t *write_proc)
+{
+	struct file_operations fops = {
+		owner: THIS_MODULE,
+		read: read_proc,
+		write: write_proc
+	};
+	struct proc_dir_entry *res = proc_create_data(name, mode, base, &fops, data);
+	return res;
+}
+#endif
+
+void rtw_proc_init_one(struct net_device *dev)
+{
+	struct proc_dir_entry *dir_dev = NULL;
+	struct proc_dir_entry *entry=NULL;
+	_adapter	*padapter = rtw_netdev_priv(dev);
+	u8 rf_type;
+
+	if(rtw_proc == NULL)
+	{
+		if(padapter->chip_type == RTL8188C_8192C)
+		{
+			_rtw_memcpy(rtw_proc_name, RTL8192C_PROC_NAME, sizeof(RTL8192C_PROC_NAME));
+		}
+		else if(padapter->chip_type == RTL8192D)
+		{
+			_rtw_memcpy(rtw_proc_name, RTL8192D_PROC_NAME, sizeof(RTL8192D_PROC_NAME));
+		}
+		else if(padapter->chip_type == RTL8723A)
+		{
+			_rtw_memcpy(rtw_proc_name, RTW_PROC_NAME, sizeof(RTW_PROC_NAME));
+		}
+		else if(padapter->chip_type == RTL8188E)
+		{
+			_rtw_memcpy(rtw_proc_name, RTW_PROC_NAME, sizeof(RTW_PROC_NAME));
+		}
+		else
+		{
+			_rtw_memcpy(rtw_proc_name, RTW_PROC_NAME, sizeof(RTW_PROC_NAME));
+		}
+
+#if(LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24))
+		rtw_proc=create_proc_entry(rtw_proc_name, S_IFDIR, proc_net);
+#elif(LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
+		rtw_proc=create_proc_entry(rtw_proc_name, S_IFDIR, init_net.proc_net);
+#else
+		rtw_proc=proc_create(rtw_proc_name, S_IFDIR, init_net.proc_net, NULL);
+#endif
+		if (rtw_proc == NULL) {
+			DBG_871X(KERN_ERR "Unable to create rtw_proc directory\n");
+			return;
+		}
+
+		entry = create_proc_read_entry("ver_info", S_IFREG | S_IRUGO, rtw_proc, proc_get_drv_version, dev);
+		if (!entry) {
+			DBG_871X("Unable to create_proc_read_entry!\n");
+			return;
+		}
+	}
+
+
+
+	if(padapter->dir_dev == NULL)
+	{
+#if(LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
+		padapter->dir_dev = create_proc_entry(dev->name,
+					  S_IFDIR | S_IRUGO | S_IXUGO,
+					  rtw_proc);
+#else
+		padapter->dir_dev = proc_create(dev->name,
+					  S_IFDIR | S_IRUGO | S_IXUGO,
+					  rtw_proc, NULL);
+#endif
+
+		dir_dev = padapter->dir_dev;
+
+		if(dir_dev==NULL)
+		{
+			if(rtw_proc_cnt == 0)
+			{
+				if(rtw_proc){
+#if(LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24))
+					remove_proc_entry(rtw_proc_name, proc_net);
+#else
+					remove_proc_entry(rtw_proc_name, init_net.proc_net);
+#endif
+					rtw_proc = NULL;
+				}
+			}
+
+			DBG_871X("Unable to create dir_dev directory\n");
+			return;
+		}
+	}
+	else
+	{
+		return;
+	}
+
+	rtw_proc_cnt++;
+
+	entry = create_proc_read_write_entry("write_reg", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_write_reg, dev, proc_set_write_reg);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_write_entry("read_reg", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_read_reg, dev, proc_set_read_reg);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("fwstate", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_fwstate, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("sec_info", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_sec_info, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("mlmext_state", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_mlmext_state, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("qos_option", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_qos_option, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("ht_option", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_ht_option, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("rf_info", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_rf_info, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("ap_info", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_ap_info, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("adapter_state", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_adapter_state, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("trx_info", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_trx_info, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("mac_reg_dump1", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_mac_reg_dump1, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("mac_reg_dump2", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_mac_reg_dump2, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("mac_reg_dump3", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_mac_reg_dump3, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("bb_reg_dump1", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_bb_reg_dump1, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("bb_reg_dump2", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_bb_reg_dump2, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("bb_reg_dump3", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_bb_reg_dump3, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("rf_reg_dump1", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_rf_reg_dump1, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_entry("rf_reg_dump2", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_rf_reg_dump2, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	rtw_hal_get_hwreg(padapter, HW_VAR_RF_TYPE, (u8 *)(&rf_type));
+	if((RF_1T2R == rf_type) ||(RF_1T1R ==rf_type ))	{
+		entry = create_proc_read_entry("rf_reg_dump3", S_IFREG | S_IRUGO,
+					   dir_dev, proc_get_rf_reg_dump3, dev);
+		if (!entry) {
+			DBG_871X("Unable to create_proc_read_entry!\n");
+			return;
+		}
+
+		entry = create_proc_read_entry("rf_reg_dump4", S_IFREG | S_IRUGO,
+					   dir_dev, proc_get_rf_reg_dump4, dev);
+		if (!entry) {
+			DBG_871X("Unable to create_proc_read_entry!\n");
+			return;
+		}
+	}
+
+#ifdef CONFIG_AP_MODE
+
+	entry = create_proc_read_entry("all_sta_info", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_all_sta_info, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#endif
+
+#ifdef DBG_MEMORY_LEAK
+	entry = create_proc_read_entry("_malloc_cnt", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_malloc_cnt, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#endif
+
+#ifdef CONFIG_FIND_BEST_CHANNEL
+	entry = create_proc_read_entry("best_channel", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_best_channel, dev);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#endif
+
+	entry = create_proc_read_write_entry("rx_signal", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_rx_signal, dev, proc_set_rx_signal);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#ifdef CONFIG_80211N_HT
+	entry = create_proc_read_write_entry("ht_enable", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_ht_enable, dev, proc_set_ht_enable);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_write_entry("bw_mode", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_bw_mode, dev, proc_set_bw_mode);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_write_entry("ampdu_enable", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_ampdu_enable, dev, proc_set_ampdu_enable);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+
+	entry = create_proc_read_write_entry("rx_stbc", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_rx_stbc, dev, proc_set_rx_stbc);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#endif //CONFIG_80211N_HT
+
+	entry = create_proc_read_entry("path_rssi", S_IFREG | S_IRUGO,
+					dir_dev, proc_get_two_path_rssi, dev);
+
+	entry = create_proc_read_write_entry("rssi_disp", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_rssi_disp, dev, proc_set_rssi_disp);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#ifdef CONFIG_BT_COEXIST
+	entry = create_proc_read_write_entry("btcoex_dbg", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_btcoex_dbg, dev, proc_set_btcoex_dbg);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#endif /*CONFIG_BT_COEXIST*/
+
+#if defined(DBG_CONFIG_ERROR_DETECT)
+	entry = create_proc_read_write_entry("sreset", S_IFREG | S_IRUGO,
+				   dir_dev, proc_get_sreset, dev, proc_set_sreset);
+	if (!entry) {
+		DBG_871X("Unable to create_proc_read_entry!\n");
+		return;
+	}
+#endif /* DBG_CONFIG_ERROR_DETECT */
+
+}
+
+void rtw_proc_remove_one(struct net_device *dev)
+{
+	struct proc_dir_entry *dir_dev = NULL;
+	_adapter	*padapter = rtw_netdev_priv(dev);
+	u8 rf_type;
+
+	dir_dev = padapter->dir_dev;
+	padapter->dir_dev = NULL;
+
+	if (dir_dev) {
+
+		remove_proc_entry("write_reg", dir_dev);
+		remove_proc_entry("read_reg", dir_dev);
+		remove_proc_entry("fwstate", dir_dev);
+		remove_proc_entry("sec_info", dir_dev);
+		remove_proc_entry("mlmext_state", dir_dev);
+		remove_proc_entry("qos_option", dir_dev);
+		remove_proc_entry("ht_option", dir_dev);
+		remove_proc_entry("rf_info", dir_dev);
+		remove_proc_entry("ap_info", dir_dev);
+		remove_proc_entry("adapter_state", dir_dev);
+		remove_proc_entry("trx_info", dir_dev);
+
+		remove_proc_entry("mac_reg_dump1", dir_dev);
+		remove_proc_entry("mac_reg_dump2", dir_dev);
+		remove_proc_entry("mac_reg_dump3", dir_dev);
+		remove_proc_entry("bb_reg_dump1", dir_dev);
+		remove_proc_entry("bb_reg_dump2", dir_dev);
+		remove_proc_entry("bb_reg_dump3", dir_dev);
+		remove_proc_entry("rf_reg_dump1", dir_dev);
+		remove_proc_entry("rf_reg_dump2", dir_dev);
+		rtw_hal_get_hwreg(padapter, HW_VAR_RF_TYPE, (u8 *)(&rf_type));
+		if((RF_1T2R == rf_type) ||(RF_1T1R ==rf_type ))	{
+			remove_proc_entry("rf_reg_dump3", dir_dev);
+			remove_proc_entry("rf_reg_dump4", dir_dev);
+		}
+#ifdef CONFIG_AP_MODE
+		remove_proc_entry("all_sta_info", dir_dev);
+#endif
+
+#ifdef DBG_MEMORY_LEAK
+		remove_proc_entry("_malloc_cnt", dir_dev);
+#endif
+
+#ifdef CONFIG_FIND_BEST_CHANNEL
+		remove_proc_entry("best_channel", dir_dev);
+#endif
+		remove_proc_entry("rx_signal", dir_dev);
+#ifdef CONFIG_80211N_HT
+		remove_proc_entry("bw_mode", dir_dev);
+
+		remove_proc_entry("ht_enable", dir_dev);
+
+		remove_proc_entry("ampdu_enable", dir_dev);
+
+		remove_proc_entry("rx_stbc", dir_dev);
+#endif //CONFIG_80211N_HT
+		remove_proc_entry("path_rssi", dir_dev);
+
+		remove_proc_entry("rssi_disp", dir_dev);
+
+#ifdef CONFIG_BT_COEXIST
+		remove_proc_entry("btcoex_dbg", dir_dev);
+#endif //CONFIG_BT_COEXIST
+
+#if defined(DBG_CONFIG_ERROR_DETECT)
+		remove_proc_entry("sreset", dir_dev);
+#endif /* DBG_CONFIG_ERROR_DETECT */
+
+		remove_proc_entry(dev->name, rtw_proc);
+		dir_dev = NULL;
+
+	}
+	else
+	{
+		return;
+	}
+
+	rtw_proc_cnt--;
+
+	if(rtw_proc_cnt == 0)
+	{
+		if(rtw_proc){
+			remove_proc_entry("ver_info", rtw_proc);
+
+#if(LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24))
+			remove_proc_entry(rtw_proc_name, proc_net);
+#else
+			remove_proc_entry(rtw_proc_name, init_net.proc_net);
+#endif
+			rtw_proc = NULL;
+		}
+	}
+}
+#endif
+
 uint loadparam( _adapter *padapter,  _nic_hdl	pnetdev)
 {
 
@@ -379,7 +845,7 @@ _func_enter_;
 		&& (registry_par->channel <= 14)) {
 		registry_par->channel = 36;
 	}
-	
+
 	registry_par->vrtl_carrier_sense = (u8)rtw_vrtl_carrier_sense ;
 	registry_par->vcs_type = (u8)rtw_vcs_type;
 	registry_par->rts_thresh=(u16)rtw_rts_thresh;
@@ -1864,7 +2330,7 @@ static const struct net_device_ops rtw_netdev_if2_ops = {
 };
 #endif
 
-_adapter *rtw_drv_if2_init(_adapter *primary_padapter, 
+_adapter *rtw_drv_if2_init(_adapter *primary_padapter,
 	void (*set_intf_ops)(_adapter *primary_padapter,struct _io_ops *pops))
 {
 	int res = _FAIL;
