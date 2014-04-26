@@ -735,9 +735,9 @@ endif
 ifeq ($(CONFIG_PLATFORM_ARM_BCM2708), y) 
 EXTRA_CFLAGS += -DCONFIG_LITTLE_ENDIAN
 ARCH := arm
-CROSS_COMPILE := /usr/src/tools/arm-bcm2708/arm-bcm2708-linux-gnueabi/bin/arm-bcm2708-linux-gnueabi-
+CROSS_COMPILE := 
 KVER  := $(shell uname -r)
-KSRC := /opt/raspberry/linux
+KSRC := /lib/modules/$(shell uname -r)/build
 endif
 
 ifeq ($(CONFIG_PLATFORM_I386_PC), y)
